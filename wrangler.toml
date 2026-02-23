@@ -1,0 +1,27 @@
+name = "neon-anime-worker"
+main = "worker-admin-logger.js"
+compatibility_date = "2024-12-01"
+
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGIN = "https://your-admin-domain.pages.dev"
+
+[[kv_namespaces]]
+binding = "OTP_KV"
+id = "59e59118d00440de92c2d4bf85ebe7f5"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "4ea0376adbf14cd68045f3185a0f6df5"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "naa-ultimate-admin"
+database_id = "5730e59a-416f-4b15-b828-0a751483e1ef"
+
+[observability.logs]
+enabled = true
+
+[placement]
+mode = "smart"
