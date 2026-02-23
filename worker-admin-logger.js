@@ -1,6 +1,7 @@
 export default {
   async fetch(request, env, ctx) {
-    // Handle CORS preflight
+
+    // CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
@@ -11,31 +12,38 @@ export default {
         }
       });
     }
+
     const url = new URL(request.url);
     const path = url.pathname;
 
     try {
 
-      if (request.method === "POST" && path === "/admin/request-otp") {
-        return requestOTP(request, env);
+      if (request.method === "POST" && path === "/admin/login") {
+        return login(request, env);
       }
 
-      if (request.method === "POST" && path === "/admin/verify-otp") {
-        return verifyOTP(request, env);
-      }
-
-      return new Response("Not Found", { status: 404 });
+      return new Response("Not Found", {
+        status: 404,
+        headers: cors(env)
+      });
 
     } catch (err) {
-      return new Response("Server Error", { status: 500 });
+      return new Response("Server Error", {
+        status: 500,
+        headers: cors(env)
+      });
     }
   }
 };
-async function requestOTP(request, env) {
+
+async function login(request, env) {
   const { email, real_name, password } = await request.json();
 
   if (!email || !real_name || !password) {
-    return new Response("Invalid Input", { status: 400 });
+    return new Response("Invalid Input", {
+      status: 400,
+      headers: cors(env)
+    });
   }
 
   const normalizedEmail = email.toLowerCase();
@@ -48,58 +56,27 @@ async function requestOTP(request, env) {
 
   if (!results.length) {
     return new Response("Unauthorized", {
-  status: 401,
-  headers: cors(env)
-});
+      status: 401,
+      headers: cors(env)
+    });
   }
 
   const admin = results[0];
 
   if (admin.real_name !== real_name.toLowerCase()) {
     return new Response("Unauthorized", {
-  status: 401,
-  headers: cors(env)
-});
+      status: 401,
+      headers: cors(env)
+    });
   }
 
   const valid = await verifyPassword(password, admin.password_hash);
   if (!valid) {
     return new Response("Unauthorized", {
-  status: 401,
-  headers: cors(env)
-});
+      status: 401,
+      headers: cors(env)
+    });
   }
-
-  const otp = generateOTP();
-
-  await env.OTP_KV.put(`otp:${normalizedEmail}`, otp, { expirationTtl: 300 });
-
-  await sendOTPEmail(normalizedEmail, otp);
-
-  return new Response("OTP Sent", {
-  headers: cors(env)
-});
-}
-async function verifyOTP(request, env) {
-  const { email, otp } = await request.json();
-  const normalizedEmail = email.toLowerCase();
-
-  const attemptKey = `otp_attempts:${normalizedEmail}`;
-  const attempts = parseInt(await env.OTP_KV.get(attemptKey) || "0");
-
-  if (attempts >= 5) {
-    return new Response("Too Many Attempts", { status: 429 });
-  }
-
-  const storedOTP = await env.OTP_KV.get(`otp:${normalizedEmail}`);
-
-  if (!storedOTP || storedOTP !== otp) {
-    await env.OTP_KV.put(attemptKey, String(attempts + 1), { expirationTtl: 300 });
-    return new Response("Invalid OTP", { status: 401 });
-  }
-
-  await env.OTP_KV.delete(`otp:${normalizedEmail}`);
-  await env.OTP_KV.delete(attemptKey);
 
   const token = crypto.randomUUID();
 
@@ -111,10 +88,12 @@ async function verifyOTP(request, env) {
 
   return new Response("Login Success", {
     headers: {
+      ...cors(env),
       "Set-Cookie": `admin_session=${token}; HttpOnly; Secure; SameSite=None; Path=/`
     }
   });
 }
+
 async function verifyPassword(password, storedHash) {
   const encoder = new TextEncoder();
   const data = encoder.encode(password);
@@ -134,37 +113,7 @@ function constantTimeEqual(a, b) {
   }
   return result === 0;
 }
-function generateOTP() {
-  const array = new Uint32Array(1);
-  crypto.getRandomValues(array);
-  return (array[0] % 90000 + 10000).toString();
-}
-async function sendOTPEmail(email, otp) {
-  await fetch("https://api.mailchannels.net/tx/v1/send", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      personalizations: [{ to: [{ email }] }],
-      from: {
-        email: "admin@yourdomain.com",
-        name: "Neon Anime Admin Login"
-      },
-      subject: "Valid OTP For Admin Login",
-      content: [{
-        type: "text/plain",
-        value: `Among our respective Admins someone requested the access to manage our SQL database \n Your Valid OTP : ${otp}\n Will stay for 5 minutes.\n Thanks to be A Member Of Our Neon Community`
-      }]
-    })
-  });
-}
-function json(data) {
-  return new Response(JSON.stringify(data), {
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store"
-    }
-  });
-}
+
 function cors(env) {
   return {
     "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN,
