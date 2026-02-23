@@ -1,13 +1,20 @@
 export default {
   async fetch(request, env, ctx) {
+    // Handle CORS preflight
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: {
+          "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN,
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+          "Access-Control-Allow-Credentials": "true"
+        }
+      });
+    }
     const url = new URL(request.url);
     const path = url.pathname;
 
     try {
-
-      if (request.method === "GET" && path === "/api/anime") {
-        return getAnimeList(env);
-      }
 
       if (request.method === "POST" && path === "/admin/request-otp") {
         return requestOTP(request, env);
@@ -24,20 +31,6 @@ export default {
     }
   }
 };
-async function getAnimeList(env) {
-  const { results } = await env.DB.prepare(`
-    SELECT ai.id, ai.title, ai.year, ai.type, ai.image_url, ai.rating
-    FROM anime_info ai
-    WHERE EXISTS (
-      SELECT 1 FROM streaming_link sl
-      WHERE sl.anime_id = ai.id
-    )
-    ORDER BY ai.popularity DESC
-    LIMIT 50
-  `).all();
-
-  return json(results);
-}
 async function requestOTP(request, env) {
   const { email, real_name, password } = await request.json();
 
@@ -54,18 +47,27 @@ async function requestOTP(request, env) {
   `).bind(normalizedEmail).all();
 
   if (!results.length) {
-    return new Response("Unauthorized", { status: 401 });
+    return new Response("Unauthorized", {
+  status: 401,
+  headers: cors(env)
+});
   }
 
   const admin = results[0];
 
   if (admin.real_name !== real_name.toLowerCase()) {
-    return new Response("Unauthorized", { status: 401 });
+    return new Response("Unauthorized", {
+  status: 401,
+  headers: cors(env)
+});
   }
 
   const valid = await verifyPassword(password, admin.password_hash);
   if (!valid) {
-    return new Response("Unauthorized", { status: 401 });
+    return new Response("Unauthorized", {
+  status: 401,
+  headers: cors(env)
+});
   }
 
   const otp = generateOTP();
@@ -74,7 +76,9 @@ async function requestOTP(request, env) {
 
   await sendOTPEmail(normalizedEmail, otp);
 
-  return new Response("OTP Sent");
+  return new Response("OTP Sent", {
+  headers: cors(env)
+});
 }
 async function verifyOTP(request, env) {
   const { email, otp } = await request.json();
@@ -107,7 +111,7 @@ async function verifyOTP(request, env) {
 
   return new Response("Login Success", {
     headers: {
-      "Set-Cookie": `admin_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/`
+      "Set-Cookie": `admin_session=${token}; HttpOnly; Secure; SameSite=None; Path=/`
     }
   });
 }
@@ -160,4 +164,10 @@ function json(data) {
       "Cache-Control": "no-store"
     }
   });
+}
+function cors(env) {
+  return {
+    "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN,
+    "Access-Control-Allow-Credentials": "true"
+  };
 }
