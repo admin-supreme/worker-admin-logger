@@ -1,4 +1,4 @@
-name = "neon-anime-worker"
+name = "worker-admin-logger"
 main = "worker-admin-logger.js"
 compatibility_date = "2024-12-01"
 
